@@ -13,7 +13,6 @@
             --user-msg: #0284c7;
             --ai-msg: #334155;
         }
-
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background-color: var(--bg-color);
@@ -23,21 +22,17 @@
             flex-direction: column;
             height: 100vh;
         }
-
         header {
             background-color: var(--card-bg);
             padding: 15px 20px;
             text-align: center;
             border-bottom: 1px solid #334155;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
         }
-
         header h1 {
             margin: 0;
             font-size: 1.5rem;
             color: var(--accent-color);
         }
-
         .chat-container {
             flex: 1;
             overflow-y: auto;
@@ -46,7 +41,6 @@
             flex-direction: column;
             gap: 15px;
         }
-
         .message {
             max-width: 80%;
             padding: 12px 16px;
@@ -55,19 +49,16 @@
             word-wrap: break-word;
             white-space: pre-wrap;
         }
-
         .user-message {
             background-color: var(--user-msg);
             align-self: flex-end;
             border-bottom-right-radius: 2px;
         }
-
         .ai-message {
             background-color: var(--ai-msg);
             align-self: flex-start;
             border-bottom-left-radius: 2px;
         }
-
         .input-container {
             padding: 15px;
             background-color: var(--card-bg);
@@ -75,7 +66,6 @@
             gap: 10px;
             border-top: 1px solid #334155;
         }
-
         input[type="text"] {
             flex: 1;
             padding: 12px;
@@ -86,11 +76,9 @@
             outline: none;
             font-size: 1rem;
         }
-
         input[type="text"]:focus {
             border-color: var(--accent-color);
         }
-
         button {
             padding: 12px 24px;
             background-color: var(--accent-color);
@@ -99,93 +87,117 @@
             border-radius: 8px;
             font-weight: bold;
             cursor: pointer;
-            transition: background 0.2s;
         }
-
-        button:hover {
+        button:hover:not(:disabled) {
             background-color: #7dd3fc;
+        }
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
         }
     </style>
 </head>
 <body>
-
     <header>
         <h1>🦙 Free Llama 3 Uzbek AI Assistant</h1>
     </header>
 
     <div class="chat-container" id="chatContainer">
         <div class="message ai-message">
-            Salom! Men mutlaqo bepul va API kalitsiz ishlaydigan AI-assistentingizman. Menga istalgan savolingizni berishingiz mumkin!
+            Salom! Men bepul AI-assistentman. Savolingizni yozing.
         </div>
     </div>
 
     <div class="input-container">
         <input type="text" id="userInput" placeholder="Xabaringizni yozing..." onkeydown="if(event.key==='Enter') sendMessage()">
-        <button onclick="sendMessage()">Yuborish</button>
+        <button id="sendBtn" onclick="sendMessage()">Yuborish</button>
     </div>
 
     <script>
+        const systemPrompt = "Siz aqlli, xushmuomala va o'zbek tilida mukammal javob beradigan AI assistentsiz. Barcha savollarga aniq va tushunarli o'zbek tilida javob bering.";
+
         async function sendMessage() {
             const userInput = document.getElementById('userInput');
-            const chatContainer = document.getElementById('chatContainer');
-
+            const sendBtn = document.getElementById('sendBtn');
             const promptText = userInput.value.trim();
             if (!promptText) return;
 
-            // User xabarini chiqarish
+            sendBtn.disabled = true;
+            userInput.disabled = true;
+
             appendMessage(promptText, 'user-message');
             userInput.value = '';
 
-            // AI yuklanish holati
-            const loadingDiv = appendMessage("Llama 3 o'ylamoqda...", 'ai-message');
+            const loadingDiv = appendMessage("O'ylamoqda...", 'ai-message');
 
             try {
-                // Pollinations Open AI API endpoint (CORS va blokirovlarsiz)
-                const response = await fetch("https://text.pollinations.ai/", {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json"
-                    },
-                    body: JSON.stringify({
-                        messages: [
-                            {
-                                role: "system",
-                                content: "Siz aqlli, xushmuomala va o'zbek tilida mukammal javob beradigan AI assistentsiz. Barcha savollarga aniq va tushunarli o'zbek tilida javob bering."
-                            },
-                            {
-                                role: "user",
-                                content: promptText
-                            }
-                        ],
-                        model: "openai", // Bepul ochiq model serveri
-                        seed: Math.floor(Math.random() * 1000)
-                    })
-                });
+                // 1-usul: POST (suhbat tarixi bilan yaxshi)
+                let reply = await tryPost(promptText);
 
-                const replyText = await response.text();
-
-                if (replyText) {
-                    loadingDiv.innerText = replyText.trim();
-                } else {
-                    loadingDiv.innerText = "Javob olishda xatolik bo'ldi.";
+                // Agar POST ishlamasa → GET usuliga o'tamiz
+                if (!reply) {
+                    reply = await tryGet(promptText);
                 }
 
-            } catch (error) {
-                console.error("Xatolik:", error);
-                loadingDiv.innerText = "Server bilan bog'lanishda xatolik yuz berdi.";
+                if (reply) {
+                    loadingDiv.innerText = reply;
+                } else {
+                    loadingDiv.innerText = "Javob olishda xatolik. Keyinroq qayta urinib ko'ring.";
+                }
+            } catch (err) {
+                console.error(err);
+                loadingDiv.innerText = "Server bilan bog'lanishda xatolik. Internetni tekshiring yoki faylni hostingga joylashtiring (GitHub Pages, Netlify va h.k.).";
+            } finally {
+                sendBtn.disabled = false;
+                userInput.disabled = false;
+                userInput.focus();
             }
+        }
 
-            chatContainer.scrollTop = chatContainer.scrollHeight;
+        // POST usuli
+        async function tryPost(prompt) {
+            try {
+                const res = await fetch("https://text.pollinations.ai/", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        messages: [
+                            { role: "system", content: systemPrompt },
+                            { role: "user", content: prompt }
+                        ],
+                        model: "openai",
+                        seed: Math.floor(Math.random() * 99999)
+                    })
+                });
+                if (!res.ok) return null;
+                const text = await res.text();
+                return text?.trim() || null;
+            } catch {
+                return null;
+            }
+        }
+
+        // GET usuli (ko'pincha barqarorroq)
+        async function tryGet(prompt) {
+            try {
+                const url = `https://text.pollinations.ai/${encodeURIComponent(prompt)}?model=openai&system=${encodeURIComponent(systemPrompt)}`;
+                const res = await fetch(url);
+                if (!res.ok) return null;
+                const text = await res.text();
+                return text?.trim() || null;
+            } catch {
+                return null;
+            }
         }
 
         function appendMessage(text, className) {
             const chatContainer = document.getElementById('chatContainer');
-            const msgDiv = document.createElement('div');
-            msgDiv.className = `message ${className}`;
-            msgDiv.innerText = text;
-            chatContainer.appendChild(msgDiv);
+            const div = document.createElement('div');
+            div.className = `message ${className}`;
+            div.innerText = text;
+            chatContainer.appendChild(div);
             chatContainer.scrollTop = chatContainer.scrollHeight;
-            return msgDiv;
+            return div;
         }
     </script>
 </body>
